@@ -49,7 +49,7 @@ const registerUser = async (req, res) => {
     const token = crypto.randomBytes(32).toString("hex")
     console.log(token)
 
-    user.verficationToken = token
+    user.verificationToken = token
 
     await user.save()
 
@@ -82,8 +82,10 @@ const registerUser = async (req, res) => {
     })
 
   } catch (error) {
+    console.error("Registration Error:", error);
     res.status(400).json({
       message: "User not registered",
+      error,
       success: false
     })
   }
@@ -110,7 +112,7 @@ const verifyUser = async (req, res) => {
   }
 
   const user = await User.findOne({
-    verficationToken: token
+    verificationToken: token
   })
 
   if (!user) {
@@ -120,7 +122,7 @@ const verifyUser = async (req, res) => {
   }
 
   user.isVerified = true
-  user.verficationToken = undefined
+  user.verificationToken = undefined
   await user.save()
 }
 
@@ -167,6 +169,7 @@ const login = async (req, res) => {
       secure: true,
       maxAge: 24 * 60 * 60 * 1000
     }
+
     res.cookie("token", token, cookieOptions)
 
     res.status(200).json({
@@ -188,9 +191,6 @@ const login = async (req, res) => {
     });
   }
 }
-
-
-
 
 
 export { registerUser, verifyUser, login }
