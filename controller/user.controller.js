@@ -1,8 +1,8 @@
 import User from "../model/User.model.js"
 import crypto from "crypto"
 import nodemailer from "nodemailer"
-
-
+import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
 
 const registerUser = async (req, res) => {
 
@@ -55,7 +55,7 @@ const registerUser = async (req, res) => {
 
     //send email 
 
-      const transporter = nodemailer.createTransport({
+    const transporter = nodemailer.createTransport({
       host: process.env.MAILTRAP_HOST,
       port: process.env.MAILTRAP_PORT,
       secure: false, // true for 465, false for other ports
@@ -66,25 +66,25 @@ const registerUser = async (req, res) => {
     })
 
     const mailOption = {
-      
-    from: process.env.MAILTRAP_SENDEREMAIL,
-    to: user.email,
-    subject: "Verify your email",
-    text: `Please click on the following link: 
-    ${process.env.BASE_URL}/api/v1/users/verify/${token}`, 
 
-}
-   await transporter.sendMail(mailOption)
+      from: process.env.MAILTRAP_SENDEREMAIL,
+      to: user.email,
+      subject: "Verify your email",
+      text: `Please click on the following link: 
+    ${process.env.BASE_URL}/api/v1/users/verify/${token}`,
 
-   res.status(201).json({
-    message: "User registered successfuly",
-    success: true
-   })
+    }
+    await transporter.sendMail(mailOption)
+
+    res.status(201).json({
+      message: "User registered successfuly",
+      success: true
+    })
 
   } catch (error) {
     res.status(400).json({
       message: "User not registered",
-      success : false
+      success: false
     })
   }
 
@@ -100,28 +100,97 @@ const verifyUser = async (req, res) => {
   //remove verification token
   //return respose
 
-  const {token} = req.params
+  const { token } = req.params
   console.log(token)
 
-  if(!token) {
+  if (!token) {
     return res.status(400).json({
       message: "Invalid token"
     })
   }
 
   const user = await User.findOne({
-    verficationToken : token
+    verficationToken: token
   })
 
-  if(!user) {
+  if (!user) {
     return res.status(400).json({
       message: "Invalid token"
     })
   }
-   
+
   user.isVerified = true
   user.verficationToken = undefined
   await user.save()
 }
 
-export { registerUser, verifyUser }
+const login = async (req, res) => {
+  const { email, password } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({
+      message: "All fields are required"
+    })
+  }
+
+  try {
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid email or password"
+      })
+    }
+    const isMatch = await bcrypt.compare(password, user.password)
+
+    console.log(isMatch)
+
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Invalid email or password"
+      })
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        message: "Please verify your email before logging in"
+      });
+    }
+
+    const token = jwt.sign({ id: user._id, role: user.role },
+      "shhhhh", {
+      expiresIn: "24h"
+    }
+    )
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      maxAge: 24 * 60 * 60 * 1000
+    }
+    res.cookie("token", token, cookieOptions)
+
+    res.status(200).json({
+      success: true,
+      message: "Login Successfull",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        role: user.role
+      }
+
+    })
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+}
+
+
+
+
+
+export { registerUser, verifyUser, login }
