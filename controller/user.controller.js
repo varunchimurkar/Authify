@@ -174,9 +174,11 @@ const login = async (req, res) => {
     }
 
     const token = jwt.sign({ id: user._id, role: user.role },
-      "shhhhh", {
-      expiresIn: "24h"
-    }
+      process.env.JWT_SECRET,
+
+      {
+        expiresIn: "24h"
+      }
     )
 
     const cookieOptions = {
@@ -207,5 +209,170 @@ const login = async (req, res) => {
   }
 }
 
+const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password')
 
-export { registerUser, verifyUser, login }
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "User not found"
+      })
+    }
+
+    res.status(200).json({
+      success: true,
+      user
+    })
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+
+}
+
+const logout = (req, res) => {
+  try {
+    res.cookie('token', '', {})
+    res.status(200).json({
+      success: true,
+      message: "Logged out successsfully"
+    })
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+}
+
+const forgetPassword = async (req, res) => {
+
+  // get email
+  // find user based on email
+  // reset token + reset expiry => Date.now() + 10 * 60 * 1000 => user.save()
+  // send mail => design url
+
+  const { email } = req.body
+
+  if (!email) {
+    return res.status(400).json({
+      message: "Email fields are required"
+    })
+  }
+
+  try {
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(400).json({
+        message: "user not found"
+      })
+    }
+
+    const resettoken = crypto.randomBytes(32).toString("hex")
+    user.resetPasswordToken = resettoken
+    user.resetPasswordExpires = Date.now() + 1 * 60 * 1000
+
+     
+    await user.save()
+
+    console.log(resettoken);
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAILTRAP_HOST,
+      port: process.env.MAILTRAP_PORT,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.MAILTRAP_USERNAME,
+        pass: process.env.MAILTRAP_PASSWORD,
+      },
+    })
+
+    const mailOption = {
+
+      from: process.env.MAILTRAP_SENDEREMAIL,
+      to: user.email,
+      subject: "Forget your Password",
+      text: `Please click on the following link: 
+      ${process.env.BASE_URL}/api/v1/users/resetPassword/${resettoken}`,
+
+      //${process.env.BASE_URL}/api/v1/users/forgetPassword/${resettoken}
+
+    }
+    await transporter.sendMail(mailOption)
+
+    res.status(201).json({
+      message: "Forget Password email sent",
+      success: true
+    })
+
+  } catch (error) {
+
+    res.status(400).json({
+      message: "User not registered",
+      error,
+      success: false
+    })
+  }
+}
+
+const resetPassword = async (req, res) => {
+  try {
+    //collect token from params
+    //password from req.body
+    const { token } = req.params;
+    const { password, confPassword } = req.body;
+
+    if (!password || !confPassword) {
+      return res.status(400).json({
+        message: "Both password fields are required"
+      })
+    }
+
+    if (password !== confPassword) {
+      return res.status(400).json({
+        message: "Passwords do not match"
+      })
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired reset token"
+      });
+    }
+    // set password in user
+    user.password = password
+
+    // resetToken, resetExpiry => reset
+
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpires = undefined
+
+    // save
+
+    await user.save()
+
+    res.status(200).json({
+      message: "Password has been reset successfully"
+    })
+
+  } catch (error) {
+
+    res.status(400).json({
+      message: "Reset Password Error",
+      error,
+      success: false
+    })
+  }
+}
+
+export { registerUser, verifyUser, login, getMe, forgetPassword, logout, resetPassword }
